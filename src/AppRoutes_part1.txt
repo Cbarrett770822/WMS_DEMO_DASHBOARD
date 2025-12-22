@@ -1,0 +1,104 @@
+﻿import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { BrowserRouter, Link, Route, Routes, useParams } from "react-router-dom";
+import { EChartsLineWidget, EChartsBarWidget, EChartsSparkline, EChartsPieWidget, EChartsStackedBar, EChartsComposed } from "./EChartsWidgets";
+import App from "./App";
+
+type DashboardWidget = {
+  id: string;
+  type: "kpi" | "line" | "bar" | "table";
+  title: string;
+  metric: string | string[];
+  description: string;
+};
+
+type DashboardPage = {
+  id: string;
+  title: string;
+  widgets: DashboardWidget[];
+};
+
+type DashboardConfig = {
+  template?: "3PL" | "Distribution";
+  subVertical?: string;
+  pages?: DashboardPage[];
+  mockData?: { months: number; seed: number };
+};
+
+type MonthlyRow = Record<string, any> & {
+  month: string;
+};
+
+type Snapshot = {
+  companyName?: string;
+  dashboardConfig?: DashboardConfig;
+  datasets?: {
+    monthly?: MonthlyRow[];
+    tables?: Record<string, Array<Record<string, any>>>;
+  };
+};
+
+function formatCell(key: string, value: any) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number") {
+    if (/pct$/i.test(key) || /percent/i.test(key)) return `${value}%`;
+    return value.toLocaleString();
+  }
+  return String(value);
+}
+
+function DataTable({ title, rows }: { title: string; rows: Array<Record<string, any>> }) {
+  const cols = useMemo(() => Object.keys(rows?.[0] || {}), [rows]);
+  if (!rows || rows.length === 0) return null;
+
+  return (
+    <div className="rounded-md border bg-background">
+      <div className="border-b px-4 py-3">
+        <div className="text-sm font-medium">{title}</div>
+      </div>
+      <div className="overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              {cols.map((c) => (
+                <th key={c} className="px-3 py-2 text-left font-medium text-muted-foreground">
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, idx) => (
+              <tr key={idx} className="border-t">
+                {cols.map((c) => (
+                  <td key={c} className="px-3 py-2 whitespace-nowrap">
+                    {formatCell(c, r[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function getByPath(obj: any, path: string) {
+  const parts = String(path || "").split(".").filter(Boolean);
+  let cur = obj;
+  for (const p of parts) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+
+function colorForIndex(i: number) {
+  const colors = ["#2563eb", "#16a34a", "#f97316", "#a855f7", "#ef4444", "#0ea5e9", "#14b8a6"];
+  return colors[i % colors.length];
+}
+
+function toMonthlySlice(monthly: MonthlyRow[], maxPoints: number) {
+  return (monthly || []).slice(Math.max(0, (monthly || []).length - maxPoints));
+}
+

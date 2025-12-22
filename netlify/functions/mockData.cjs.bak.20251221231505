@@ -1,0 +1,233 @@
+const { json, HEADERS } = require("./_anthropic.cjs");
+
+function mulberry32(a) {
+  return function () {
+    let t = (a += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randInt(r, min, max) {
+  return Math.floor(r() * (max - min + 1)) + min;
+}
+
+function randChoice(r, arr) {
+  return arr[Math.floor(r() * arr.length)];
+}
+
+function toKey(x) {
+  return String(x || "").trim();
+}
+
+function collectMonthlyMetricKeys(cfg) {
+  const out = new Set();
+  const pages = Array.isArray(cfg?.pages) ? cfg.pages : [];
+  for (const p of pages) {
+    const widgets = Array.isArray(p?.widgets) ? p.widgets : [];
+    for (const w of widgets) {
+      const m = w?.metric;
+      const arr = Array.isArray(m) ? m : [m];
+      for (const raw of arr) {
+        const k = toKey(raw);
+        if (!k) continue;
+        if (k.startsWith("tables.")) continue;
+        out.add(k);
+      }
+    }
+  }
+  return Array.from(out);
+}
+
+function isPctLikeMetric(key) {
+  const k = String(key || "").toLowerCase();
+  return k.includes("pct") || k.includes("percent") || k.includes("rate") || k.includes("accuracy") || k.includes("otif") || k.includes("on-time") || k.includes("ontime");
+}
+
+function synthMetricValue(r, key, ctx) {
+  const k = String(key || "").toLowerCase();
+  const orders = Number(ctx?.orders || 5000);
+  const outbound = Number(ctx?.outboundShipments || orders);
+
+  if (isPctLikeMetric(key)) {
+    const v = 0.88 + r() * 0.115;
+    return Math.round(v * 1000) / 10;
+  }
+
+  if (k.includes("cost")) {
+    return Math.round((3 + r() * 6.5) * 100) / 100;
+  }
+
+  if (k.includes("hour")) {
+    return Math.round(800 + r() * 6200);
+  }
+
+  if (k.includes("ecommerce") || k.includes("e-com") || k.includes("ecom")) {
+    return Math.round(outbound * (0.55 + r() * 0.2));
+  }
+  if (k.includes("b2b")) {
+    return Math.round(outbound * (0.18 + r() * 0.2));
+  }
+  if (k.includes("b2c")) {
+    return Math.round(outbound * (0.12 + r() * 0.18));
+  }
+
+  if (k.includes("volume") || k.includes("count") || k.includes("orders") || k.includes("ship") || k.includes("receip") || k.includes("line") || k.includes("unit")) {
+    return Math.round(orders * (0.2 + r() * 1.4));
+  }
+
+  return Math.round(50 + r() * 950);
+}
+exports.handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: HEADERS, body: "" };
+  try {
+    const req = event.body ? JSON.parse(event.body) : {};
+    const cfg = req.dashboardConfig || {};
+    const months = Math.max(6, Math.min(24, Number(cfg?.mockData?.months || 12)));
+    const seed = Number(cfg?.mockData?.seed || 12345);
+    const r = mulberry32(seed);
+    const monthlyMetricKeys = collectMonthlyMetricKeys(cfg);
+
+    const series = [];
+    const now = new Date();
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const month = d.toISOString().slice(0, 7);
+      const orders = Math.round(5000 + r() * 3000 + Math.sin((months - i) / 2) * 400);
+      const lines = Math.round(orders * (2.5 + r()));
+      const otif = Math.round((0.9 + r() * 0.08) * 1000) / 10;
+      const costPerOrder = Math.round((4.5 + r() * 2.5) * 100) / 100;
+      const inboundReceipts = Math.round(orders * (0.45 + r() * 0.25));
+      const outboundShipments = Math.round(orders * (0.9 + r() * 0.15));
+      const backlogOrders = Math.round(orders * (0.02 + r() * 0.08));
+      const pickAccuracyPct = Math.round((99.0 + r() * 0.85) * 100) / 100;
+      const cycleCountAccuracyPct = Math.round((98.5 + r() * 1.2) * 100) / 100;
+      const utilizationPct = Math.round((72 + r() * 22) * 10) / 10;
+      const dockToStockHrs = Math.round((6 + r() * 22) * 10) / 10;
+      const returnsRatePct = Math.round((0.6 + r() * 2.2) * 10) / 10;
+      const damagePct = Math.round((0.05 + r() * 0.35) * 100) / 100;
+      const laborHours = Math.round(3400 + r() * 1600);
+      const units = lines * Math.round(1.1 + r() * 0.7);
+      const uph = Math.round((units / laborHours) * 10) / 10;
+      const row = {
+        month,
+        orders,
+        lines,
+        inboundReceipts,
+        outboundShipments,
+        backlogOrders,
+        otif,
+        pickAccuracyPct,
+        cycleCountAccuracyPct,
+        utilizationPct,
+        dockToStockHrs,
+        returnsRatePct,
+        damagePct,
+        laborHours,
+        units,
+        uph,
+        costPerOrder
+      };
+
+      for (const k of monthlyMetricKeys) {
+        if (row[k] === undefined || row[k] === null) {
+          row[k] = synthMetricValue(r, k, { orders, lines, inboundReceipts, outboundShipments, laborHours, units });
+        }
+      }
+
+      series.push(row);
+    }
+
+    const customers = ["Acme Retail", "Northwind", "Contoso", "BlueMart", "OmniShop", "Metro Wholesale", "Vertex Health"];
+    const carriers = ["DHL", "FedEx", "UPS", "DPD", "LocalCarrier"];
+    const facilities = ["DC-01", "DC-02", "FC-SEA", "FC-DAL"];
+
+    const tables = {
+      slaByCustomer: customers.map((c) => {
+        const shipped = randInt(r, 800, 4200);
+        const late = randInt(r, 0, Math.round(shipped * 0.08));
+        const otifPct = Math.round(((shipped - late) / shipped) * 1000) / 10;
+        return {
+          customer: c,
+          ordersShipped: shipped,
+          lateOrders: late,
+          otifPct,
+          avgDelayHrs: randInt(r, 2, 26)
+        };
+      }),
+
+      backlogAging: [
+        { bucket: "0-24h", orders: randInt(r, 120, 620), pct: 0 },
+        { bucket: "24-48h", orders: randInt(r, 40, 260), pct: 0 },
+        { bucket: "48-72h", orders: randInt(r, 20, 160), pct: 0 },
+        { bucket: "72h+", orders: randInt(r, 10, 120), pct: 0 }
+      ],
+
+      exceptionsSummary: [
+        "Late shipment",
+        "Short pick",
+        "Inventory hold",
+        "Carrier missed pickup",
+        "Address exception",
+        "Damaged"
+      ].map((t) => {
+        const open = randInt(r, 10, 220);
+        return {
+          exceptionType: t,
+          open,
+          newToday: randInt(r, 0, 40),
+          avgAgeHrs: randInt(r, 4, 96),
+          worstFacility: randChoice(r, facilities)
+        };
+      }),
+
+      inventoryAging: [
+        { bucket: "0-30", qty: randInt(r, 12000, 42000), valueUsd: randInt(r, 800000, 4200000) },
+        { bucket: "31-60", qty: randInt(r, 6000, 22000), valueUsd: randInt(r, 300000, 1600000) },
+        { bucket: "61-90", qty: randInt(r, 2000, 12000), valueUsd: randInt(r, 120000, 900000) },
+        { bucket: "90+", qty: randInt(r, 800, 8000), valueUsd: randInt(r, 60000, 650000) }
+      ],
+
+      laborProductivityByShift: ["Shift A", "Shift B", "Shift C"].map((s) => {
+        const hours = randInt(r, 1800, 5200);
+        const units = randInt(r, 60000, 210000);
+        const uph = Math.round((units / hours) * 10) / 10;
+        const target = Math.round((uph * (0.9 + r() * 0.15)) * 10) / 10;
+        return { shift: s, hours, units, uph, targetUph: target, variancePct: Math.round(((uph - target) / target) * 1000) / 10 };
+      }),
+
+      carrierPerformance: carriers.map((c) => {
+        const shipments = randInt(r, 900, 7000);
+        const onTimePct = Math.round((0.9 + r() * 0.08) * 1000) / 10;
+        const damagePct = Math.round((r() * 0.6) * 10) / 10;
+        const cost = Math.round((3.2 + r() * 2.8) * 100) / 100;
+        return { carrier: c, shipments, onTimePct, damagePct, costPerShipmentUsd: cost };
+      })
+    };
+    // Alias for configs that expect "orderExceptionsByReason"
+    tables.orderExceptionsByReason = (tables.exceptionsSummary || []).map((r) => ({
+      reason: r.exceptionType,
+      count: r.open,
+      open: r.open,
+      newToday: r.newToday,
+      avgAgeHrs: r.avgAgeHrs,
+      worstFacility: r.worstFacility
+    }));
+
+    // Fill backlog pct
+    const totalBacklog = tables.backlogAging.reduce((a, b) => a + b.orders, 0) || 1;
+    tables.backlogAging = tables.backlogAging.map((row) => ({
+      ...row,
+      pct: Math.round((row.orders / totalBacklog) * 1000) / 10
+    }));
+
+    return json(200, { datasets: { monthly: series, tables } });
+  } catch (e) {
+    return json(500, { error: e.message || String(e) });
+  }
+};
+
+
+
+

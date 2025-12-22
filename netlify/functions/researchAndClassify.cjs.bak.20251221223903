@@ -1,0 +1,150 @@
+﻿const { json, anthropicMessages, HEADERS } = require("./_anthropic.cjs");
+
+function stripCodeFences(text) {
+  const t = String(text || "").trim();
+  if (!t.startsWith("```")) return t;
+  const withoutStart = t.replace(/^```[a-zA-Z]*\s*/, "");
+  return withoutStart.replace(/\s*```\s*$/, "").trim();
+}
+
+function extractJsonObject(text) {
+  const t = String(text || "").trim();
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start >= 0 && end > start) return t.slice(start, end + 1);
+  return t;
+}
+
+function safeJsonParse(text) {
+  const cleaned = stripCodeFences(text);
+  const jsonText = extractJsonObject(cleaned);
+  return { cleaned, jsonText, value: JSON.parse(jsonText) };
+}
+
+function isNonEmptyString(x) {
+  return typeof x === "string" && x.trim().length > 0;
+}
+
+function isStringArray(x) {
+  return Array.isArray(x) && x.every((v) => isNonEmptyString(v));
+}
+
+function validateCombined(out) {
+  if (!out || typeof out !== "object") return "output is not an object";
+  if (!isNonEmptyString(out.researchText)) return "researchText is required";
+  const c = out.classification;
+  if (!c || typeof c !== "object") return "classification is required";
+  if (!(c.industry === "3PL" || c.industry === "Distribution")) return "classification.industry must be '3PL' or 'Distribution'";
+  if (!isNonEmptyString(c.subVertical)) return "classification.subVertical is required";
+  if (typeof c.confidence !== "number" || c.confidence < 0 || c.confidence > 1) return "classification.confidence must be 0..1";
+  if (!isStringArray(c.rationale) || c.rationale.length < 2) return "classification.rationale must be a string[]";
+  return null;
+}
+
+function buildPrimaryPrompt({ companyName, notes }) {
+  const notesBlock = notes ? `\n\nDISCOVERY NOTES (INPUT):\n${notes}\n` : "";
+  return (
+    `Create a combined research brief + dashboard classification for \"${companyName}\".\n` +
+    `Return ONLY valid JSON (no markdown, no commentary, no code fences).\n` +
+    `The response MUST be a single JSON object with exactly these keys: researchText, classification.\n\n` +
+    `researchText MUST be plain text (not markdown) using EXACTLY this template:\n` +
+    `1) COMPANY OVERVIEW\n- ...\n` +
+    `2) LIKELY SUPPLY CHAIN / FULFILLMENT PROFILE\n- Channels: ...\n- Regions: ...\n- Facilities: ...\n- Seasonality: ...\n` +
+    `3) WAREHOUSE OPERATIONS ASSUMPTIONS\n- Receiving: ...\n- Putaway: ...\n- Picking: ...\n- Packing: ...\n- Shipping: ...\n` +
+    `4) KPIs THAT WILL MATTER (10-15)\n- ...\n` +
+    `5) TOP RISKS / PAIN POINTS (5)\n- ...\n` +
+    `6) QUESTIONS TO VALIDATE (8)\n- ...\n\n` +
+    `classification MUST be exactly this JSON shape:\n` +
+    `{\n` +
+    `  \"industry\": \"3PL\" or \"Distribution\",\n` +
+    `  \"subVertical\": string,\n` +
+    `  \"confidence\": number,\n` +
+    `  \"rationale\": string[]\n` +
+    `}\n\n` +
+    `Allowed subVertical examples:\n` +
+    `- 3PL: EcomFulfillment3PL, B2BDistribution3PL, ColdChain3PL\n` +
+    `- Distribution: WholesaleDistribution, RetailDC, MROPartsDistribution\n\n` +
+    `Rules for researchText:\n- Use '-' for bullets only.\n- Keep bullets short (<= 1 line).\n- No long paragraphs.\n\n` +
+    `Rules for classification:\n- confidence must be 0 to 1\n- rationale must be 3-6 short strings\n\n` +
+    `Company: ${companyName}\n` +
+    notesBlock
+  );
+}
+
+function buildRepairPrompt({ badJsonText }) {
+  return (
+    `You will be given an INVALID JSON string.\n` +
+    `Your task: output a COMPLETE, VALID JSON object ONLY (no markdown, no commentary).\n` +
+    `Do not omit required keys. Ensure objects/arrays are properly closed and strings are quoted.\n\n` +
+    `Required keys: researchText, classification.\n` +
+    `classification keys: industry, subVertical, confidence, rationale.\n\n` +
+    `INVALID_JSON_START\n${String(badJsonText || "").slice(0, 12000)}\nINVALID_JSON_END\n`
+  );
+}
+
+async function getCombinedWithRetry({ apiKey, model, system, companyName, notes }) {
+  const user1 = buildPrimaryPrompt({ companyName, notes });
+  const raw1 = await anthropicMessages({ apiKey, model, system, user: user1, maxTokens: 1100, timeoutMs: 25000 });
+
+  try {
+    const parsed = safeJsonParse(raw1);
+    const err = validateCombined(parsed.value);
+    if (err) throw new Error(err);
+    return { out: parsed.value, attempts: 1 };
+  } catch (e1) {
+    const user2 = buildRepairPrompt({ badJsonText: raw1 });
+    const raw2 = await anthropicMessages({ apiKey, model, system, user: user2, maxTokens: 900, timeoutMs: 25000 });
+
+    let parsed2;
+    try {
+      parsed2 = safeJsonParse(raw2);
+    } catch (e2) {
+      const msg1 = e1 instanceof Error ? e1.message : String(e1);
+      const msg2 = e2 instanceof Error ? e2.message : String(e2);
+      return {
+        error: "Failed to parse combined JSON from model output",
+        details: {
+          firstAttempt: { message: msg1, raw: String(raw1 || "").slice(0, 6000) },
+          secondAttempt: { message: msg2, raw: String(raw2 || "").slice(0, 6000) }
+        }
+      };
+    }
+
+    const err2 = validateCombined(parsed2.value);
+    if (err2) {
+      const msg1 = e1 instanceof Error ? e1.message : String(e1);
+      return {
+        error: "Failed to parse/validate combined JSON from model output",
+        details: {
+          firstAttempt: { message: msg1, raw: String(raw1 || "").slice(0, 6000) },
+          secondAttempt: { message: err2, raw: String(raw2 || "").slice(0, 6000), extracted: String(parsed2.jsonText || "").slice(0, 6000) }
+        }
+      };
+    }
+
+    return { out: parsed2.value, attempts: 2 };
+  }
+}
+
+exports.handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: HEADERS, body: "" };
+  try {
+    const req = event.body ? JSON.parse(event.body) : {};
+    const companyName = String(req.companyName || "").trim();
+    const notes = String(req.notes || "").trim();
+    const apiKey = String(req.apiKey || process.env.ANTHROPIC_API_KEY || "").trim();
+
+    if (!companyName) return json(400, { error: "companyName is required" });
+    if (!apiKey) return json(500, { error: "Missing ANTHROPIC_API_KEY env var." });
+
+    const model = "claude-3-haiku-20240307";
+    const system = "You are a supply chain and warehouse operations pre-sales consultant.";
+
+    const resp = await getCombinedWithRetry({ apiKey, model, system, companyName, notes: notes || "" });
+    if (resp && resp.error) return json(500, resp);
+
+    return json(200, { researchText: resp.out.researchText, classification: resp.out.classification, attempts: resp.attempts });
+  } catch (e) {
+    return json(500, { error: e && e.message ? e.message : String(e) });
+  }
+};

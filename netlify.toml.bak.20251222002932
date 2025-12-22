@@ -1,0 +1,17 @@
+[build]
+  command = "npm --prefix presales-dashboard-generator run build"
+  publish = "presales-dashboard-generator/dist"
+  functions = "presales-dashboard-generator/netlify/functions"
+
+[dev]
+  command = "npm --prefix presales-dashboard-generator run dev -- --port 5173 --strictPort"
+  targetPort = 5173
+  functions = "presales-dashboard-generator/netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
