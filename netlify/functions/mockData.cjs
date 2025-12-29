@@ -280,6 +280,13 @@ exports.handler = async (event) => {
       // Cost: rises with tightness and exceptions
       const costPerOrder = clamp(Math.round((4.1 + capacityTightness * 5.4 + backlogRatio * 8 + (r() - 0.5) * 0.6) * 100) / 100, 2.5, 18);
 
+      // Aged inventory metrics (units in different age buckets)
+      const totalInventory = Math.round(orders * (2.5 + r() * 1.5));
+      const aged_0_3m = Math.round(totalInventory * (0.55 + inventoryHealth * 0.15));
+      const aged_3_6m = Math.round(totalInventory * (0.20 + (1 - inventoryHealth) * 0.08));
+      const aged_6_12m = Math.round(totalInventory * (0.12 + (1 - inventoryHealth) * 0.10));
+      const aged_12m_plus = Math.max(0, totalInventory - aged_0_3m - aged_3_6m - aged_6_12m);
+
       const row = {
         month,
         orders,
@@ -297,7 +304,11 @@ exports.handler = async (event) => {
         dockToStockHrs,
         returnsRatePct,
         damagePct,
-        costPerOrder
+        costPerOrder,
+        "aged_0-3m": aged_0_3m,
+        "aged_3-6m": aged_3_6m,
+        "aged_6-12m": aged_6_12m,
+        "aged_12m+": aged_12m_plus
       };
 
       // Apply metricDefinitions (company-specific metrics) with correlation to existing context.
