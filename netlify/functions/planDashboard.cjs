@@ -42,11 +42,11 @@ function validateDashboardConfig(cfg) {
   for (const p of cfg.pages) {
     if (!p || typeof p !== "object") return "page is not an object";
     if (!isNonEmptyString(p.id) || !isNonEmptyString(p.title)) return "page.id and page.title are required";
-    if (!Array.isArray(p.widgets) || p.widgets.length < 1) return page must have widgets;
+    if (!Array.isArray(p.widgets) || p.widgets.length < 1) return "page must have widgets";
     for (const w of p.widgets) {
       if (!w || typeof w !== "object") return "widget is not an object";
       if (!isNonEmptyString(w.id) || !isNonEmptyString(w.type) || !isNonEmptyString(w.title)) return "widget.id, widget.type, widget.title are required";
-      if (!isValidMetric(w.metric)) return widget must include metric;
+      if (!isValidMetric(w.metric)) return "widget must include metric";
     }
   }
 
