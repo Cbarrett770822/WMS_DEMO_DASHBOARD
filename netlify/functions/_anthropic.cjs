@@ -47,7 +47,7 @@ async function anthropicMessages({ apiKey, model, system, user, maxTokens = 800,
           continue;
         }
         
-        throw new Error(Anthropic error : );
+        throw new Error(`Anthropic error ${res.status}: ${text}`);
       }
 
       const data = JSON.parse(text);
