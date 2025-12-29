@@ -55,16 +55,16 @@ function DataTable({ title, rows }: { title: string; rows: Array<Record<string, 
   if (!rows || rows.length === 0) return null;
 
   return (
-    <div className="rounded-md border bg-background">
-      <div className="border-b px-4 py-3">
-        <div className="text-sm font-medium">{title}</div>
+    <div className="rounded-lg border bg-card shadow-sm">
+      <div className="border-b px-4 py-3 bg-muted/30">
+        <div className="text-sm font-semibold">{title}</div>
       </div>
       <div className="overflow-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr>
               {cols.map((c) => (
-                <th key={c} className="px-3 py-2 text-left font-medium text-muted-foreground">
+                <th key={c} className="px-3 py-2 text-left font-semibold text-foreground">
                   {c}
                 </th>
               ))}
@@ -72,7 +72,7 @@ function DataTable({ title, rows }: { title: string; rows: Array<Record<string, 
           </thead>
           <tbody>
             {rows.map((r, idx) => (
-              <tr key={idx} className="border-t">
+              <tr key={idx} className="border-t hover:bg-muted/20 transition-colors">
                 {cols.map((c) => (
                   <td key={c} className="px-3 py-2 whitespace-nowrap">
                     {formatCell(c, r[c])}
@@ -203,9 +203,9 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-md border bg-background">
-      <div className="border-b px-4 py-3">
-        <div className="text-sm font-medium">{title}</div>
+    <div className="rounded-lg border bg-card shadow-md">
+      <div className="border-b px-4 py-3 bg-muted/30">
+        <div className="text-sm font-semibold">{title}</div>
         {description ? <div className="text-xs text-muted-foreground">{description}</div> : null}
       </div>
       <div className="p-4">{children}</div>
@@ -431,15 +431,15 @@ function WidgetCard({ widget, monthly, tables }: { widget: DashboardWidget; mont
     const deltaClass = hasDelta ? (deltaAbs! >= 0 ? "text-emerald-600" : "text-red-600") : "text-muted-foreground";
 
     body = (
-      <div className="grid gap-3">
-        <div className="grid gap-1">
-          <div className="text-3xl font-semibold">{v === null || v === undefined ? "—" : formatCell(k, v)}</div>
+      <div className="grid gap-4">
+        <div className="grid gap-2">
+          <div className="text-4xl font-bold tracking-tight">{v === null || v === undefined ? "—" : formatCell(k, v)}</div>
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-muted-foreground">{latest ? latest.month : "No data"}</div>
-            <div className={`text-xs px-2 py-0.5 rounded-full border bg-muted/40 ${deltaClass}`}
+            <div className="text-xs text-muted-foreground font-medium">{latest ? latest.month : "No data"}</div>
+            <div className={`text-xs px-2.5 py-1 rounded-md font-semibold ${deltaClass} ${hasDelta ? (deltaAbs! >= 0 ? "bg-emerald-50 border border-emerald-200" : "bg-red-50 border border-red-200") : "bg-muted/40 border"}`}
               title={hasDelta ? `Prev: ${formatCell(k, pvNum)}\nΔ: ${deltaAbs?.toLocaleString?.() ?? deltaAbs}` : ""}
             >
-              {hasDelta ? `${deltaAbs! >= 0 ? "+" : ""}${deltaAbs!.toLocaleString()} (${deltaPct!.toFixed(1)}%)` : ""}
+              {hasDelta ? `${deltaAbs! >= 0 ? "↑ +" : "↓ "}${deltaAbs!.toLocaleString()} (${deltaPct!.toFixed(1)}%)` : ""}
             </div>
           </div>
         </div>
@@ -463,9 +463,9 @@ function WidgetCard({ widget, monthly, tables }: { widget: DashboardWidget; mont
   }
 
   return (
-    <div className="rounded-md border bg-background">
-      <div className="border-b px-4 py-3">
-        <div className="text-sm font-medium">{widget.title}</div>
+    <div className="rounded-lg border bg-card shadow-md hover:shadow-lg transition-shadow">
+      <div className="border-b px-4 py-3 bg-muted/30">
+        <div className="text-sm font-semibold">{widget.title}</div>
         <div className="text-xs text-muted-foreground">{widget.description}</div>
       </div>
       <div className="p-4">{body}</div>
@@ -595,11 +595,15 @@ function DashRoute() {
           {headerRight}
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-6 flex flex-wrap gap-2">
           {pages.map((p) => (
             <button
               key={p.id}
-              className={`h-9 rounded-md border px-3 text-sm ${p.id === active?.id ? "bg-muted" : "bg-background"}`}
+              className={`h-10 rounded-lg px-4 text-sm font-medium transition-all ${
+                p.id === active?.id 
+                  ? "bg-primary text-primary-foreground shadow-md" 
+                  : "bg-card border hover:bg-muted/50 shadow-sm"
+              }`}
               onClick={() => setPageId(p.id)}
             >
               {p.title}
@@ -609,7 +613,7 @@ function DashRoute() {
 
         
           <div className="grid gap-6">
-  <div className="text-lg font-semibold">{active?.title}</div>
+  <div className="text-2xl font-bold tracking-tight">{active?.title}</div>
   {active?.title === "Executive" ? (
     <Panel title="Shipments vs OTIF" description="Monthly shipments volume vs OTIF%">
       <ShipmentsOtifCombo rows={monthly} />
