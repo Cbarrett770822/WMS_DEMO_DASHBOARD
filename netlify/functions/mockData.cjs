@@ -462,7 +462,10 @@ exports.handler = async (event) => {
       newToday: r.newToday,
       avgAgeHrs: r.avgAgeHrs,
       worstFacility: r.worstFacility
-    }));    
+    }));
+    
+    tables.agedInventoryReport = tables.inventoryAging;
+    tables.aged_inventory = tables.inventoryAging;    
     // Generate dynamic tables for custom metrics
     const pages = Array.isArray(cfg?.pages) ? cfg.pages : [];
     for (const p of pages) {
