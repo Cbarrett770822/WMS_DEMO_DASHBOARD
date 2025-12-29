@@ -477,21 +477,51 @@ exports.handler = async (event) => {
           const tableName = k.slice("tables.".length);
           if (tables[tableName]) continue;
           
-          // Generate 5-8 rows of generic data
+          // Generate realistic industry-specific data
           const rowCount = randInt(r, 5, 8);
           tables[tableName] = [];
-          for (let i = 0; i < rowCount; i++) {
-            const row = { id: i + 1, name: `Item ${i + 1}` };
-            // Add numeric columns based on metric name
-            if (tableName.includes("expiration")) row.expiringPct = randInt(r, 5, 35);
-            if (tableName.includes("location")) row.location = randChoice(r, ["DC-East", "DC-West", "DC-Central", "DC-South"]);
-            if (tableName.includes("reconciliation") || tableName.includes("variance")) {
-              row.expected = randInt(r, 100, 500);
-              row.actual = row.expected + randInt(r, -20, 20);
-              row.variance = row.actual - row.expected;
+          
+          if (tableName.includes("controlledSubstance") || tableName.includes("controlled")) {
+            for (let i = 0; i < rowCount; i++) {
+              tables[tableName].push({
+                medication: `Med-${String.fromCharCode(65 + i)}`,
+                schedule: randChoice(r, ["II", "III", "IV"]),
+                onHandQty: randInt(r, 50, 500),
+                cycleCountAccuracy: Math.round((97 + r() * 2.5) * 10) / 10,
+                location: `Vault-${String.fromCharCode(65 + i)}`
+              });
             }
-            if (tableName.includes("substance") || tableName.includes("controlled")) row.itemName = `Med-${String.fromCharCode(65 + i)}`;
-            tables[tableName].push(row);
+          } else if (tableName.includes("recall")) {
+            for (let i = 0; i < rowCount; i++) {
+              tables[tableName].push({
+                recallId: `RC-${2024000 + i}`,
+                product: `Product-${String.fromCharCode(65 + i)}`,
+                status: randChoice(r, ["Active", "In Progress", "Resolved"]),
+                affectedUnits: randInt(r, 50, 2000),
+                daysOpen: randInt(r, 1, 45)
+              });
+            }
+          } else if (tableName.includes("return")) {
+            for (let i = 0; i < rowCount; i++) {
+              tables[tableName].push({
+                returnType: randChoice(r, ["Damaged", "Expired", "Wrong Item", "Customer Return"]),
+                count: randInt(r, 20, 300),
+                processingTime: randInt(r, 2, 72),
+                creditIssued: randInt(r, 500, 15000)
+              });
+            }
+          } else {
+            for (let i = 0; i < rowCount; i++) {
+              const row = { id: i + 1, name: `Item ${i + 1}` };
+              if (tableName.includes("expiration")) row.expiringPct = randInt(r, 5, 35);
+              if (tableName.includes("location")) row.location = randChoice(r, ["DC-East", "DC-West", "DC-Central"]);
+              if (tableName.includes("reconciliation") || tableName.includes("variance")) {
+                row.expected = randInt(r, 100, 500);
+                row.actual = row.expected + randInt(r, -20, 20);
+                row.variance = row.actual - row.expected;
+              }
+              tables[tableName].push(row);
+            }
           }
         }
       }
